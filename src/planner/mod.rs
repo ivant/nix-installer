@@ -196,6 +196,15 @@ impl BuiltinPlanner {
         }
     }
 
+    fn is_running_in_container() -> bool {
+        if !std::env::var_os("container").unwrap_or_default().is_empty() {
+            return true;
+        }
+        ["/run/.containerenv", "/.dockerenv"]
+            .iter()
+            .any(|path| std::fs::exists(path).is_ok_and(|exists| exists))
+    }
+
     async fn detect_linux_distro() -> Result<Self, PlannerError> {
         let is_steam_deck =
             os_release::OsRelease::new().is_ok_and(|os_release| os_release.id == "steamos");
@@ -209,6 +218,10 @@ impl BuiltinPlanner {
             .output()
             .is_ok_and(|output| output.status.success());
         if is_ostree {
+            let is_bootc = Self::is_running_in_container();
+            if is_bootc {
+                todo!("Bootc containers are not supported yet");
+            }
             return Ok(Self::Ostree(ostree::Ostree::default().await?));
         }
 
