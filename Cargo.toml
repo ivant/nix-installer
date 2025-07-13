@@ -59,6 +59,7 @@ walkdir = "2.3.3"
 indexmap = { version = "2.0.2", features = ["serde"] }
 once_cell = "1.19.0"
 tempfile = "3.3.0"
+indoc = "2.0.6"
 
 [dev-dependencies]
 eyre = { version = "0.6.8", default-features = false, features = [ "track-caller" ] }

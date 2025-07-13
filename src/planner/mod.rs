@@ -101,6 +101,7 @@ match plan.install(feedback::devnull::DevNull{}, None).await {
 ```
 
 */
+pub mod bootc;
 pub mod linux;
 pub mod macos;
 pub mod ostree;
@@ -167,6 +168,9 @@ pub enum BuiltinPlanner {
     #[cfg_attr(not(target_os = "linux"), clap(hide = true))]
     /// A planner suitable for immutable systems using ostree, such as Fedora Silverblue
     Ostree(ostree::Ostree),
+    #[cfg_attr(not(target_os = "linux"), clap(hide = true))]
+    /// A planner for Bootc-based containers
+    Bootc(bootc::Bootc),
     #[cfg_attr(not(target_os = "macos"), clap(hide = true))]
     /// A planner for MacOS (Darwin) systems
     Macos(macos::Macos),
@@ -220,7 +224,7 @@ impl BuiltinPlanner {
         if is_ostree {
             let is_bootc = Self::is_running_in_container();
             if is_bootc {
-                todo!("Bootc containers are not supported yet");
+                return Ok(Self::Bootc(bootc::Bootc::default().await?));
             }
             return Ok(Self::Ostree(ostree::Ostree::default().await?));
         }
@@ -234,6 +238,7 @@ impl BuiltinPlanner {
             BuiltinPlanner::Linux(inner) => inner.settings = settings,
             BuiltinPlanner::SteamDeck(inner) => inner.settings = settings,
             BuiltinPlanner::Ostree(inner) => inner.settings = settings,
+            BuiltinPlanner::Bootc(inner) => inner.settings = settings,
             BuiltinPlanner::Macos(inner) => inner.settings = settings,
         }
         Ok(built)
@@ -244,6 +249,7 @@ impl BuiltinPlanner {
             BuiltinPlanner::Linux(inner) => &mut inner.settings,
             BuiltinPlanner::SteamDeck(inner) => &mut inner.settings,
             BuiltinPlanner::Ostree(inner) => &mut inner.settings,
+            BuiltinPlanner::Bootc(inner) => &mut inner.settings,
             BuiltinPlanner::Macos(inner) => &mut inner.settings,
         }
     }
@@ -255,6 +261,7 @@ impl BuiltinPlanner {
             BuiltinPlanner::Linux(inner) => inner.configured_settings().await,
             BuiltinPlanner::SteamDeck(inner) => inner.configured_settings().await,
             BuiltinPlanner::Ostree(inner) => inner.configured_settings().await,
+            BuiltinPlanner::Bootc(inner) => inner.configured_settings().await,
             BuiltinPlanner::Macos(inner) => inner.configured_settings().await,
         }
     }
@@ -264,6 +271,7 @@ impl BuiltinPlanner {
             BuiltinPlanner::Linux(planner) => InstallPlan::plan(planner).await,
             BuiltinPlanner::SteamDeck(planner) => InstallPlan::plan(planner).await,
             BuiltinPlanner::Ostree(planner) => InstallPlan::plan(planner).await,
+            BuiltinPlanner::Bootc(planner) => InstallPlan::plan(planner).await,
             BuiltinPlanner::Macos(planner) => InstallPlan::plan(planner).await,
         }
     }
@@ -272,6 +280,7 @@ impl BuiltinPlanner {
             BuiltinPlanner::Linux(i) => i.boxed(),
             BuiltinPlanner::SteamDeck(i) => i.boxed(),
             BuiltinPlanner::Ostree(i) => i.boxed(),
+            BuiltinPlanner::Bootc(i) => i.boxed(),
             BuiltinPlanner::Macos(i) => i.boxed(),
         }
     }
@@ -281,6 +290,7 @@ impl BuiltinPlanner {
             BuiltinPlanner::Linux(i) => i.typetag_name(),
             BuiltinPlanner::SteamDeck(i) => i.typetag_name(),
             BuiltinPlanner::Ostree(i) => i.typetag_name(),
+            BuiltinPlanner::Bootc(i) => i.typetag_name(),
             BuiltinPlanner::Macos(i) => i.typetag_name(),
         }
     }
@@ -290,6 +300,7 @@ impl BuiltinPlanner {
             BuiltinPlanner::Linux(i) => i.settings(),
             BuiltinPlanner::SteamDeck(i) => i.settings(),
             BuiltinPlanner::Ostree(i) => i.settings(),
+            BuiltinPlanner::Bootc(i) => i.settings(),
             BuiltinPlanner::Macos(i) => i.settings(),
         }
     }
