@@ -2,7 +2,7 @@ use indoc::{formatdoc, indoc};
 
 use crate::{
     action::{
-        base::{CreateDirectory, CreateFile, RemoveDirectory},
+        base::{CreateDirectory, CreateFile, MoveDirectory, RemoveDirectory},
         common::{
             ConfigureNix, ConfigureUpstreamInitService, CreateUsersAndGroups,
             ProvisionDeterminateNixd, ProvisionNix,
@@ -193,7 +193,7 @@ impl Planner for Bootc {
             .boxed(),
         );
 
-        // Create /nix directory. This must be created within the container, because root is read-only.
+        // Create /nix directory. We'll install Nix there, then move it to the readonly image directory.
         plan.push(
             CreateDirectory::plan("/nix", None, None, 0o0755, true)
                 .await
@@ -258,6 +258,24 @@ impl Planner for Bootc {
         // Configure upstream init service, but don't start daemon.
         plan.push(
             ConfigureUpstreamInitService::plan(InitSystem::Systemd, false)
+                .await
+                .map_err(PlannerError::Action)?
+                .boxed(),
+        );
+
+        // Move /nix directory to readonly_image directory.
+        // This is the final step to prepare the Nix installation for the bootc container.
+        plan.push(
+            MoveDirectory::plan("/nix", &self.readonly_image)
+                .await
+                .map_err(PlannerError::Action)?
+                .boxed(),
+        );
+
+        // Re-create an empty /nix directory. This must be created within the
+        // container, because root is read-only and this is our mountpoint.
+        plan.push(
+            CreateDirectory::plan("/nix", None, None, 0o0755, true)
                 .await
                 .map_err(PlannerError::Action)?
                 .boxed(),
