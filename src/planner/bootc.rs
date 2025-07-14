@@ -329,6 +329,12 @@ impl Planner for Bootc {
             serde_json::to_value(systemd_unit_dir)?,
         );
 
+        // Add readonly_image as post-install artifacts directory.
+        map.insert(
+            "post_install_artifacts_dir".to_string(),
+            serde_json::to_value(readonly_image)?,
+        );
+
         Ok(map)
     }
 

@@ -84,7 +84,7 @@ impl Action for MoveDirectory {
     #[tracing::instrument(level = "debug", skip_all)]
     async fn execute(&mut self) -> Result<(), ActionError> {
         let Self { src, dest } = self;
-        Self::check_src_and_dest(&src, &dest).await?;
+        Self::check_src_and_dest(src, dest).await?;
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = dest.parent() {
@@ -123,7 +123,7 @@ impl Action for MoveDirectory {
     #[tracing::instrument(level = "debug", skip_all)]
     async fn revert(&mut self) -> Result<(), ActionError> {
         let Self { src, dest } = self;
-        Self::check_src_and_dest(&dest, &src).await?;
+        Self::check_src_and_dest(dest, src).await?;
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = src.parent() {

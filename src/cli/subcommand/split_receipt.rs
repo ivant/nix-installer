@@ -3,7 +3,6 @@ use std::{path::PathBuf, process::ExitCode, time::SystemTime};
 use crate::{
     action::{Action, ActionState, StatefulAction},
     cli::{ensure_root, interaction::PromptChoice},
-    plan::RECEIPT_LOCATION,
     InstallPlan,
 };
 use clap::{ArgAction, Parser};
@@ -13,6 +12,7 @@ use owo_colors::OwoColorize;
 
 use crate::cli::CommandExecute;
 
+const RECEIPT_LOCATION: &str = "/nix/receipt.json";
 pub(crate) const PHASE1_RECEIPT_LOCATION: &str = "/nix/uninstall-phase1.json";
 pub(crate) const PHASE2_RECEIPT_LOCATION: &str = "/nix/uninstall-phase2.json";
 

@@ -7,7 +7,7 @@ use std::{
 use crate::{
     cli::{ensure_root, interaction::PromptChoice, signal_channel},
     error::HasExpectedErrors,
-    plan::{current_version, RECEIPT_LOCATION},
+    plan::current_version,
     InstallPlan, NixInstallerError,
 };
 use clap::{ArgAction, Parser};
@@ -16,6 +16,8 @@ use owo_colors::OwoColorize;
 use rand::Rng;
 
 use crate::cli::{interaction, CommandExecute};
+
+const DEFAULT_RECEIPT_LOCATION: &str = "/nix/receipt.json";
 
 /// Uninstall a previously `nix-installer` installed Nix
 #[derive(Debug, Parser)]
@@ -38,7 +40,7 @@ pub struct Uninstall {
     )]
     pub explain: bool,
 
-    #[clap(default_value = RECEIPT_LOCATION)]
+    #[clap(default_value = DEFAULT_RECEIPT_LOCATION)]
     pub receipt: PathBuf,
 }
 
@@ -111,7 +113,7 @@ impl CommandExecute for Uninstall {
             }
         }
 
-        let install_receipt_string = tokio::fs::read_to_string(receipt)
+        let install_receipt_string = tokio::fs::read_to_string(&receipt)
             .await
             .wrap_err("Reading receipt")?;
 
@@ -148,11 +150,11 @@ impl CommandExecute for Uninstall {
                 format!("\
                     {e}\n\
                     \n\
-                    Found existing plan in `{RECEIPT_LOCATION}` which was created by a version incompatible `nix-installer`.\n\
+                    Found existing plan in `{receipt_location}` which was created by a version incompatible `nix-installer`.\n\
                     \n
                     To uninstall, either run `/nix/nix-installer uninstall` or `curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix/tag/v${version} | sh -s -- uninstall`\n\
                     \n\
-                ").red()
+                ", receipt_location = receipt.display()).red()
             );
             return Ok(ExitCode::FAILURE);
         }

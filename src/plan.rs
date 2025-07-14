@@ -12,8 +12,6 @@ use owo_colors::OwoColorize;
 use semver::{Version, VersionReq};
 use tokio::sync::broadcast::Receiver;
 
-pub const RECEIPT_LOCATION: &str = "/nix/receipt.json";
-
 /**
 A set of [`Action`]s, along with some metadata, which can be carried out to drive an install or
 revert
@@ -351,10 +349,31 @@ impl InstallPlan {
     }
 
     pub(crate) async fn write_receipt(&self) -> Result<(), NixInstallerError> {
-        let install_receipt_path = PathBuf::from(RECEIPT_LOCATION);
+        let install_receipt_path = self.receipt_location()?;
         write_receipt(self, &install_receipt_path).await?;
-
         Ok(())
+    }
+
+    pub fn receipt_location(&self) -> Result<PathBuf, NixInstallerError> {
+        Ok(self
+            .planner
+            .settings()?
+            .get("post_install_artifacts_dir")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/nix"))
+            .join("receipt.json"))
+    }
+
+    pub fn nix_installer_location(&self) -> Result<PathBuf, NixInstallerError> {
+        Ok(self
+            .planner
+            .settings()?
+            .get("post_install_artifacts_dir")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/nix"))
+            .join("nix-installer"))
     }
 }
 
@@ -362,17 +381,15 @@ pub(crate) async fn write_receipt(
     plan: &impl serde::Serialize,
     install_receipt_path: &Path,
 ) -> Result<(), NixInstallerError> {
-    let install_receipt_path_tmp = {
-        let mut install_receipt_path_tmp = install_receipt_path.to_path_buf();
-        install_receipt_path_tmp.set_extension("tmp");
-        install_receipt_path_tmp
-    };
+    let install_receipt_path_tmp = install_receipt_path.with_extension("tmp");
     let self_json =
         serde_json::to_string_pretty(plan).map_err(NixInstallerError::SerializingReceipt)?;
 
-    tokio::fs::create_dir_all("/nix")
-        .await
-        .map_err(|e| NixInstallerError::RecordingReceipt(PathBuf::from("/nix"), e))?;
+    if let Some(parent_dir) = install_receipt_path.parent() {
+        tokio::fs::create_dir_all(parent_dir)
+            .await
+            .map_err(|e| NixInstallerError::RecordingReceipt(parent_dir.to_path_buf(), e))?;
+    }
     tokio::fs::write(&install_receipt_path_tmp, format!("{self_json}\n"))
         .await
         .map_err(|e| NixInstallerError::RecordingReceipt(install_receipt_path_tmp.clone(), e))?;

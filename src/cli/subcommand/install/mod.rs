@@ -15,7 +15,6 @@ use crate::{
         CommandExecute,
     },
     error::HasExpectedErrors,
-    plan::RECEIPT_LOCATION,
     settings::CommonSettings,
     util::OnMissing,
     BuiltinPlanner, InstallPlan, NixInstallerError,
@@ -91,23 +90,31 @@ impl CommandExecute for Install {
 
         ensure_root()?;
 
-        let existing_receipt: Option<InstallPlan> = match Path::new(RECEIPT_LOCATION).exists() {
+        let old_receipt_location = Path::new("/nix/receipt.json");
+        let old_installer_location = Path::new("/nix/nix-installer");
+
+        let existing_receipt: Option<InstallPlan> = match old_receipt_location.exists() {
             true => {
                 tracing::trace!("Reading existing receipt");
-                let install_plan_string = tokio::fs::read_to_string(&RECEIPT_LOCATION)
+                let install_plan_string = tokio::fs::read_to_string(old_receipt_location)
                     .await
                     .wrap_err("Reading plan")?;
                 Some(
                     serde_json::from_str(&install_plan_string).wrap_err_with(|| {
-                        format!("Unable to parse existing receipt `{RECEIPT_LOCATION}`, it may be from an incompatible version of `nix-installer`. Try running `/nix/nix-installer uninstall`, then installing again.")
+                        format!(
+                            "Unable to parse existing receipt `{}`, it may be from an incompatible version of `nix-installer`. \
+                             Try running `{} uninstall`, then installing again.",
+                            old_receipt_location.display(),
+                            old_installer_location.display(),
+                        )
                     })?,
                 )
             },
             false => None,
         };
 
-        let uninstall_command = match Path::new("/nix/nix-installer").exists() {
-            true => "/nix/nix-installer uninstall".into(),
+        let uninstall_command = match old_installer_location.exists() {
+            true => format!("{} uninstall", old_installer_location.display()),
             false => format!("curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix/tag/v{} | sh -s -- uninstall", env!("CARGO_PKG_VERSION")),
         };
 
@@ -139,26 +146,35 @@ impl CommandExecute for Install {
                         format!("\
                             {e}\n\
                             \n\
-                            Found existing plan in `{RECEIPT_LOCATION}` which was created by a version incompatible `nix-installer`.\n\
+                            Found existing plan in `{old_receipt_location}` which was created by a version incompatible `nix-installer`.\n\
                             {EXISTING_INCOMPATIBLE_PLAN_GUIDANCE}\n\
-                        ").red()
+                        ", old_receipt_location = old_receipt_location.display()).red()
                         );
                     return Ok(ExitCode::FAILURE);
                 }
 
                 if existing_receipt.planner.typetag_name() != planner.typetag_name() {
-                    eprintln!("{}", format!("Found existing plan in `{RECEIPT_LOCATION}` which used a different planner, try uninstalling the existing install with `{uninstall_command}`").red());
+                    eprintln!("{}", format!(
+                        "Found existing plan in `{old_receipt_location}` which used a different planner, try uninstalling the existing install with `{uninstall_command}`",
+                        old_receipt_location = old_receipt_location.display()
+                    ).red());
                     return Ok(ExitCode::FAILURE);
                 }
 
                 if existing_receipt.planner.settings().map_err(|e| eyre!(e))?
                     != planner.settings().map_err(|e| eyre!(e))?
                 {
-                    eprintln!("{}", format!("Found existing plan in `{RECEIPT_LOCATION}` which used different planner settings, try uninstalling the existing install with `{uninstall_command}`").red());
+                    eprintln!("{}", format!(
+                        "Found existing plan in `{old_receipt_location}` which used different planner settings, try uninstalling the existing install with `{uninstall_command}`",
+                        old_receipt_location = old_receipt_location.display(),
+                    ).red());
                     return Ok(ExitCode::FAILURE);
                 }
 
-                eprintln!("{}", format!("Found existing plan in `{RECEIPT_LOCATION}`, with the same settings, already completed. Try uninstalling (`{uninstall_command}`) and reinstalling if Nix isn't working").red());
+                eprintln!("{}", format!(
+                    "Found existing plan in `{old_receipt_location}`, with the same settings, already completed. Try uninstalling (`{uninstall_command}`) and reinstalling if Nix isn't working",
+                    old_receipt_location = old_receipt_location.display(),
+                ).red());
                 return Ok(ExitCode::SUCCESS);
             }
 
@@ -222,7 +238,9 @@ impl CommandExecute for Install {
         match install_plan.install(feedback.clone(), rx1).await {
             Err(err) => {
                 // Attempt to copy self to the store if possible, but since the install failed, this might not work, that's ok.
-                copy_self_to_nix_dir().await.ok();
+                copy_self_to_nix_dir(&install_plan.nix_installer_location()?)
+                    .await
+                    .ok();
 
                 if !no_confirm {
                     let mut was_expected = false;
@@ -311,9 +329,13 @@ impl CommandExecute for Install {
                 }
             },
             Ok(_) => {
-                copy_self_to_nix_dir()
+                let nix_installer_location = install_plan.nix_installer_location()?;
+                copy_self_to_nix_dir(&nix_installer_location)
                     .await
-                    .wrap_err("Copying `nix-installer` to `/nix/nix-installer`")?;
+                    .wrap_err(format!(
+                        "Copying `nix-installer` to `{}`",
+                        nix_installer_location.display(),
+                    ))?;
 
                 let phase1_receipt_path = Path::new(PHASE1_RECEIPT_LOCATION);
                 if phase1_receipt_path.exists() {
@@ -356,9 +378,9 @@ impl CommandExecute for Install {
 }
 
 #[tracing::instrument(level = "debug")]
-async fn copy_self_to_nix_dir() -> Result<(), std::io::Error> {
+async fn copy_self_to_nix_dir(dest: &Path) -> Result<(), std::io::Error> {
     let path = std::env::current_exe()?;
-    tokio::fs::copy(path, "/nix/nix-installer").await?;
-    tokio::fs::set_permissions("/nix/nix-installer", PermissionsExt::from_mode(0o0755)).await?;
+    tokio::fs::copy(path, dest).await?;
+    tokio::fs::set_permissions(dest, PermissionsExt::from_mode(0o0755)).await?;
     Ok(())
 }

@@ -1,4 +1,5 @@
 use std::io::IsTerminal as _;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::SystemTime;
 
@@ -13,7 +14,6 @@ use crate::action::common::{ConfigureShellProfile, CreateUsersAndGroups};
 use crate::action::{Action, ActionState, StatefulAction};
 use crate::cli::interaction::PromptChoice;
 use crate::cli::{ensure_root, CommandExecute};
-use crate::plan::RECEIPT_LOCATION;
 use crate::planner::{PlannerError, ShellProfileLocations};
 use crate::{execute_command, InstallPlan};
 
@@ -36,6 +36,14 @@ pub struct Repair {
         global = true
     )]
     pub no_confirm: bool,
+
+    #[clap(
+        long,
+        env = "NIX_INSTALLER_RECEIPT_LOCATION",
+        default_value = "/nix/receipt.json",
+        global = true
+    )]
+    pub receipt_location: PathBuf,
 
     #[command(subcommand)]
     command: Option<RepairKind>,
@@ -139,6 +147,7 @@ impl CommandExecute for Repair {
                 ..
             } => {
                 let maybe_users_and_groups_from_receipt = maybe_users_and_groups_from_receipt(
+                    &self.receipt_location,
                     nix_build_user_prefix,
                     nix_build_user_count,
                     nix_build_group_name,
@@ -234,6 +243,7 @@ impl CommandExecute for Repair {
                 let user_base = crate::settings::default_nix_build_user_id_base();
 
                 let maybe_users_and_groups_from_receipt = maybe_users_and_groups_from_receipt(
+                    &self.receipt_location,
                     &nix_build_user_prefix,
                     nix_build_user_count,
                     &nix_build_group_name,
@@ -250,11 +260,12 @@ impl CommandExecute for Repair {
                 if receipt_action_idx_create_group.is_none() {
                     tracing::warn!(
                         "Unable to find {} in receipt (receipt didn't exist or is unable to be \
-                        parsed by this version of the installer). Your receipt at {RECEIPT_LOCATION} \
+                        parsed by this version of the installer). Your receipt at {} \
                         will not reflect the changed UIDs, but the users will still be relocated \
                         to the new Sequoia-compatible UID range, starting at {user_base}, and \
                         uninstallation will continue to work as normal, even if the UIDs do not match.",
-                        CreateUsersAndGroups::action_tag()
+                        CreateUsersAndGroups::action_tag(),
+                        self.receipt_location.display(),
                     );
                 }
 
@@ -434,9 +445,10 @@ impl CommandExecute for Repair {
                 .duration_since(SystemTime::UNIX_EPOCH)?
                 .as_millis();
 
-            let mut old_receipt = std::path::PathBuf::from(RECEIPT_LOCATION);
-            old_receipt.set_extension(format!("pre-repair.{timestamp_millis}.json"));
-            tokio::fs::copy(RECEIPT_LOCATION, &old_receipt).await?;
+            let old_receipt = self
+                .receipt_location
+                .with_extension(format!("pre-repair.{timestamp_millis}.json"));
+            tokio::fs::copy(&self.receipt_location, &old_receipt).await?;
             tracing::info!("Backed up pre-repair receipt to {}", old_receipt.display());
 
             updated_receipt.write_receipt().await?;
@@ -477,11 +489,11 @@ where
 }
 
 #[tracing::instrument]
-async fn get_existing_receipt() -> Option<InstallPlan> {
-    match std::path::Path::new(RECEIPT_LOCATION).exists() {
+async fn get_existing_receipt(receipt_location: &Path) -> Option<InstallPlan> {
+    match receipt_location.exists() {
         true => {
             tracing::debug!("Reading existing receipt");
-            let install_plan_string = tokio::fs::read_to_string(RECEIPT_LOCATION).await.ok();
+            let install_plan_string = tokio::fs::read_to_string(receipt_location).await.ok();
 
             match install_plan_string {
                 Some(s) => match serde_json::from_str::<InstallPlan>(s.as_str()) {
@@ -562,11 +574,12 @@ struct UsersAndGroupsMeta {
 }
 
 async fn maybe_users_and_groups_from_receipt(
+    receipt_location: &Path,
     nix_build_user_prefix: &str,
     nix_build_user_count: u32,
     nix_build_group_name: &str,
 ) -> eyre::Result<UsersAndGroupsMeta> {
-    let existing_receipt = get_existing_receipt().await;
+    let existing_receipt = get_existing_receipt(receipt_location).await;
     let maybe_create_users_and_groups_idx_action = find_users_and_groups(existing_receipt)?;
 
     match maybe_create_users_and_groups_idx_action {
