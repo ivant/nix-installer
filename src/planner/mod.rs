@@ -209,13 +209,17 @@ impl BuiltinPlanner {
             .any(|path| std::fs::exists(path).is_ok_and(|exists| exists))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn detect_linux_distro() -> Result<Self, PlannerError> {
+        tracing::debug!("Checking if Steam Deck");
         let is_steam_deck =
             os_release::OsRelease::new().is_ok_and(|os_release| os_release.id == "steamos");
         if is_steam_deck {
+            tracing::debug!("Steam Deck detected");
             return Ok(Self::SteamDeck(steam_deck::SteamDeck::default().await?));
         }
 
+        tracing::debug!("Checking if ostree or bootc is installed");
         let is_ostree = std::process::Command::new("ostree")
             .arg("remote")
             .arg("list")
@@ -224,11 +228,14 @@ impl BuiltinPlanner {
         if is_ostree {
             let is_bootc = Self::is_running_in_container();
             if is_bootc {
+                tracing::debug!("Bootc detected");
                 return Ok(Self::Bootc(bootc::Bootc::default().await?));
             }
+            tracing::debug!("Ostree detected");
             return Ok(Self::Ostree(ostree::Ostree::default().await?));
         }
 
+        tracing::debug!("Linux detected");
         Ok(Self::Linux(linux::Linux::default().await?))
     }
 

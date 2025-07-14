@@ -46,6 +46,7 @@ impl Planner for Linux {
         })
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn plan(&self) -> Result<Vec<StatefulAction<Box<dyn Action>>>, PlannerError> {
         let has_selinux = detect_selinux().await?;
 

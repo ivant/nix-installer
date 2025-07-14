@@ -74,6 +74,7 @@ impl Planner for Bootc {
         })
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn plan(&self) -> Result<Vec<StatefulAction<Box<dyn Action>>>, PlannerError> {
         let mut plan = vec![];
 

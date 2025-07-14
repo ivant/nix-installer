@@ -28,6 +28,7 @@ pub struct InstallPlan {
 }
 
 impl InstallPlan {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn default() -> Result<Self, NixInstallerError> {
         let planner = BuiltinPlanner::default().await?;
 
@@ -41,6 +42,7 @@ impl InstallPlan {
         })
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn plan<P>(planner: P) -> Result<Self, NixInstallerError>
     where
         P: Planner + 'static,
