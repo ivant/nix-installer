@@ -9,7 +9,7 @@ use crate::{
         },
         linux::{
             provision_selinux::{DETERMINATE_SELINUX_POLICY_PP_CONTENT, SELINUX_POLICY_PP_CONTENT},
-            ProvisionSelinux,
+            EnableSystemdUnit, ProvisionSelinux,
         },
         StatefulAction,
     },
@@ -264,6 +264,14 @@ impl Planner for Bootc {
                 .boxed(),
         );
 
+        // Remove scratch directory
+        plan.push(
+            RemoveDirectory::plan(crate::settings::SCRATCH_DIR)
+                .await
+                .map_err(PlannerError::Action)?
+                .boxed(),
+        );
+
         // Move /nix directory to readonly_image directory.
         // This is the final step to prepare the Nix installation for the bootc container.
         plan.push(
@@ -282,25 +290,17 @@ impl Planner for Bootc {
                 .boxed(),
         );
 
-        // // Enable the nix.mount unit.
-        // plan.push(
-        //     StartSystemdUnit::plan("nix.mount".to_string(), false)
-        //         .await
-        //         .map_err(PlannerError::Action)?
-        //         .boxed(),
-        // );
-
-        // Enable and start the ensure-symlinked-units-resolve service
-        // plan.push(
-        //    StartSystemdUnit::plan("ensure-symlinked-units-resolve.service".to_string(), true)
-        //        .await
-        //        .map_err(PlannerError::Action)?
-        //        .boxed(),
-        // );
-
-        // Remove scratch directory
+        // Enable the nix.mount unit.
         plan.push(
-            RemoveDirectory::plan(crate::settings::SCRATCH_DIR)
+            EnableSystemdUnit::plan("nix.mount")
+                .await
+                .map_err(PlannerError::Action)?
+                .boxed(),
+        );
+
+        // Enable the ensure-symlinked-units-resolve.service.
+        plan.push(
+            EnableSystemdUnit::plan("ensure-symlinked-units-resolve.service")
                 .await
                 .map_err(PlannerError::Action)?
                 .boxed(),
