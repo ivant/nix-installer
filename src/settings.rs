@@ -133,6 +133,9 @@ pub struct CommonSettings {
     )]
     pub nix_build_user_id_base: u32,
 
+    #[cfg_attr(all(target_os = "linux", feature = "cli"), clap(long, action))]
+    pub use_systemd_sysusers: bool,
+
     /// The Nix package URL
     #[cfg_attr(
         feature = "cli",
@@ -240,6 +243,7 @@ impl CommonSettings {
             force: false,
             skip_nix_conf: false,
             ssl_cert_file: Default::default(),
+            use_systemd_sysusers: false,
         })
     }
 
@@ -259,6 +263,7 @@ impl CommonSettings {
             force,
             skip_nix_conf,
             ssl_cert_file,
+            use_systemd_sysusers,
         } = self;
         let mut map = HashMap::default();
 
@@ -299,6 +304,10 @@ impl CommonSettings {
         map.insert("extra_conf".into(), serde_json::to_value(extra_conf)?);
         map.insert("force".into(), serde_json::to_value(force)?);
         map.insert("skip_nix_conf".into(), serde_json::to_value(skip_nix_conf)?);
+        map.insert(
+            "use_systemd_sysusers".into(),
+            serde_json::to_value(use_systemd_sysusers)?,
+        );
 
         Ok(map)
     }
