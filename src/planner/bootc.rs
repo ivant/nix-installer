@@ -7,7 +7,10 @@ use crate::{
             ConfigureNix, ConfigureUpstreamInitService, ProvisionDeterminateNixd, ProvisionNix,
         },
         linux::{
-            provision_selinux::{DETERMINATE_SELINUX_POLICY_PP_CONTENT, SELINUX_POLICY_PP_CONTENT},
+            provision_selinux::{
+                BOOTC_SELINUX_POLICY_PP_CONTENT, DETERMINATE_SELINUX_POLICY_PP_CONTENT,
+                SELINUX_POLICY_PP_CONTENT,
+            },
             CreateUsersAndGroupsSysUsers, EnableSystemdUnit, ProvisionSelinux,
         },
         StatefulAction,
@@ -24,6 +27,8 @@ use super::{
     linux::{check_nix_not_already_installed, check_not_nixos, check_not_wsl1},
     ShellProfileLocations,
 };
+
+const BOOTC_SELINUX_POLICY_PP_PATH: &str = "/usr/share/selinux/packages/nix-bootc.pp";
 
 /// A planner for bootable container systems using bootc
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -159,13 +164,21 @@ impl Planner for Bootc {
             .boxed(),
         );
 
+        // Enable the nix.mount unit.
+        plan.push(
+            EnableSystemdUnit::plan("nix.mount")
+                .await
+                .map_err(PlannerError::Action)?
+                .boxed(),
+        );
+
         // Create "Ensure symlinked units resolve" unit that runs after the mount unit
         let ensure_symlinked_units_resolve_content = indoc! {
             r#"
             [Unit]
             Description=Ensure Nix related units which are symlinked resolve
-            After=nix.mount
-            Requires=nix.mount
+            After=nix.mount restore-nix-selinux-context.service
+            Requires=nix.mount restore-nix-selinux-context.service
             DefaultDependencies=no
 
             [Service]
@@ -178,7 +191,6 @@ impl Planner for Bootc {
             WantedBy=sysinit.target
             "#
         };
-
         plan.push(
             CreateFile::plan(
                 self.systemd_unit_path("ensure-symlinked-units-resolve.service"),
@@ -191,6 +203,14 @@ impl Planner for Bootc {
             .await
             .map_err(PlannerError::Action)?
             .boxed(),
+        );
+
+        // Enable the ensure-symlinked-units-resolve.service.
+        plan.push(
+            EnableSystemdUnit::plan("ensure-symlinked-units-resolve.service")
+                .await
+                .map_err(PlannerError::Action)?
+                .boxed(),
         );
 
         // Create /nix directory. We'll install Nix there, then move it to the readonly image directory.
@@ -245,16 +265,51 @@ impl Planner for Bootc {
         // Nix SELinux policy to avoid problems if SELinux gets enabled in a later layer.
         plan.push(
             ProvisionSelinux::plan(
-                "/etc/nix-installer/selinux/packages/nix.pp".into(),
-                if self.settings.distribution() == Distribution::DeterminateNix {
-                    DETERMINATE_SELINUX_POLICY_PP_CONTENT
-                } else {
-                    SELINUX_POLICY_PP_CONTENT
-                },
+                BOOTC_SELINUX_POLICY_PP_PATH.into(),
+                BOOTC_SELINUX_POLICY_PP_CONTENT,
             )
             .await
             .map_err(PlannerError::Action)?
             .boxed(),
+        );
+        let restore_nix_selinux_context = formatdoc! {
+            r#"
+            [Unit]
+            Description=Restore Nix SELinux context after mounting /nix
+            After=nix.mount
+            Requires=nix.mount
+            Before=nix-daemon.socket nix-daemon.service
+            DefaultDependencies=no
+
+            [Service]
+            Type=oneshot
+            ExecStart=/usr/sbin/semodule --install {BOOTC_SELINUX_POLICY_PP_PATH}
+            ExecStart=/usr/sbin/restorecon -FR /nix
+
+            [Install]
+            WantedBy=nix-daemon.socket nix-daemon.service
+            "#
+        };
+        plan.push(
+            CreateFile::plan(
+                self.systemd_unit_path("restore-nix-selinux-context.service"),
+                None,
+                None,
+                0o0644,
+                restore_nix_selinux_context.to_string(),
+                false,
+            )
+            .await
+            .map_err(PlannerError::Action)?
+            .boxed(),
+        );
+
+        // Enable the restore_nix_selinux_context.service.
+        plan.push(
+            EnableSystemdUnit::plan("restore-nix-selinux-context.service")
+                .await
+                .map_err(PlannerError::Action)?
+                .boxed(),
         );
 
         // Configure upstream init service, but don't start daemon.
@@ -286,22 +341,6 @@ impl Planner for Bootc {
         // container, because root is read-only and this is our mountpoint.
         plan.push(
             CreateDirectory::plan("/nix", None, None, 0o0755, true)
-                .await
-                .map_err(PlannerError::Action)?
-                .boxed(),
-        );
-
-        // Enable the nix.mount unit.
-        plan.push(
-            EnableSystemdUnit::plan("nix.mount")
-                .await
-                .map_err(PlannerError::Action)?
-                .boxed(),
-        );
-
-        // Enable the ensure-symlinked-units-resolve.service.
-        plan.push(
-            EnableSystemdUnit::plan("ensure-symlinked-units-resolve.service")
                 .await
                 .map_err(PlannerError::Action)?
                 .boxed(),

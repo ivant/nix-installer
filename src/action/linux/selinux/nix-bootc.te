@@ -1,0 +1,34 @@
+module nix-bootc 1.0;
+
+require {
+  type bin_t;
+  type lib_t;
+  type man_t;
+  type usr_t;
+  type etc_t;
+  type var_run_t;
+  type var_lib_t;
+  type systemd_unit_file_t;
+  type default_t;
+  type init_t;
+  class lnk_file read;
+  class dir { add_name create getattr open read remove_name search write };
+  class file { create getattr map open read rename unlink write };
+}
+
+allow init_t default_t:lnk_file read;
+
+# Directory operations for various contexts
+allow init_t var_run_t:dir { add_name create getattr open read remove_name search write };
+allow init_t var_lib_t:dir { add_name create getattr open read remove_name search write };
+allow init_t default_t:dir { add_name create getattr open read remove_name search write };
+allow init_t lib_t:dir { add_name create getattr open read remove_name search write };
+allow init_t bin_t:dir { add_name create getattr open read remove_name search write };
+
+# File operations for various contexts
+allow init_t var_run_t:file { create getattr map open read rename unlink write };
+allow init_t var_lib_t:file { create getattr map open read rename unlink write };
+allow init_t default_t:file { create getattr map open read rename unlink write };
+allow init_t lib_t:file { create getattr map open read rename unlink write };
+allow init_t bin_t:file { create getattr map open read rename unlink write };
+allow init_t systemd_unit_file_t:file { create getattr map open read rename unlink write };
