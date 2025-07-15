@@ -8,7 +8,7 @@ use crate::{
         },
         linux::{
             provision_selinux::{DETERMINATE_SELINUX_POLICY_PP_CONTENT, SELINUX_POLICY_PP_CONTENT},
-            EnableSystemdUnit, ProvisionSelinux,
+            CreateUsersAndGroupsSysUsers, EnableSystemdUnit, ProvisionSelinux,
         },
         StatefulAction,
     },
@@ -223,38 +223,11 @@ impl Planner for Bootc {
         // Create users and groups.
         // We are following best practices for Bootc and modern systemd-based systems here
         // by creating the build group and users through systemd-sysusers.
-        let nix_group_id = 30000;
-        let nix_user_id_base = 30001;
-        let mut nix_sysusers_content = formatdoc! {
-            r#"
-            # Nix build group and users.
-            g nixbld {nix_group_id}
-            "#
-        };
-        for i in 1..=32 {
-            let uid = nix_user_id_base + i - 1;
-            // Starting Systemd 257 it is recommended to use "u!" instead of "u", which creates locked
-            // user accounts. Unfortunately, this is version dependent and version 257 is relatively
-            // recent (Dec 2024), so we'll use "u" for now. Eventually we can have "u!" as a default
-            // with a flag to switch back to "u" if needed for older systems.
-            nix_sysusers_content += &formatdoc! {
-                r#"
-                u nixbld{i} {uid}:{nix_group_id} "Nix build user {i}"
-                "#
-            };
-        }
         plan.push(
-            CreateFile::plan(
-                "/usr/lib/sysusers.d/nix.conf",
-                None,
-                None,
-                0o0644,
-                nix_sysusers_content.to_string(),
-                false,
-            )
-            .await
-            .map_err(PlannerError::Action)?
-            .boxed(),
+            CreateUsersAndGroupsSysUsers::plan(&self.settings)
+                .await
+                .map_err(PlannerError::Action)?
+                .boxed(),
         );
 
         // Configure Nix.
